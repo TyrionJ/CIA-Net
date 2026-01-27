@@ -50,13 +50,19 @@ class Processor:
         return data * mask
 
     def analyze_one(self, img_file, roi_file):
+        """
+        Analysis subject statistic for DDP
+        :param img_file:
+        :param roi_file:
+        :return: Statistical data of each ROI on the image, including median, 0.5% and 99.5% percentile, mean, and std
+        """
         img_data = nb.load(img_file).get_fdata()
         roi_data = nb.load(roi_file).get_fdata()
         img_data = self.clip_normalization(img_data)
         prop = {}
-        for label in self.labels:
-            values = img_data[roi_data == label]
-            prop[label] = {
+        for ROI in self.labels:
+            values = img_data[roi_data == ROI]
+            prop[ROI] = {
                 'median': np.median(values),
                 'percentile_99_5': np.percentile(values, 99.5),
                 'percentile_00_5': np.percentile(values, 0.5),
@@ -67,14 +73,27 @@ class Processor:
 
     @staticmethod
     def cluster_domain(m_props, cut_thr):
+        """
+        Divide individual modal domains
+        :param m_props: Properties of each modality
+        :param cut_thr: domain similarity threshold
+        :return: partitioned groups information
+        """
+
+        # Determine whether two domains belong to the same domain.
         in_one_group = lambda means, _i, _j: abs(means[_i] - means[_j]) / max(abs(means[_i]), abs(means[_j])) <= cut_thr
+
+        # Initialize each ROI as a separate domain group.
         groups = [[v] for k, v in m_props.items()]
         groups = sorted(groups, key=lambda item: item[0]['median'])
         while True:
+            # Use the median of each group as the partition criterion.
             group_means = [np.median([i['median'] for i in group]) for group in groups]
+            # Check whether the partitioning is complete.
             stop = True
             for i in range(len(group_means)):
                 for j in range(i + 1, len(group_means)):
+                    # Two domain groups can be merged.
                     if in_one_group(group_means, i, j):
                         stop = False
                         break
@@ -83,6 +102,7 @@ class Processor:
             if stop:
                 break
 
+            # Record statistics for the new grouping.
             new_groups, used = [], set()
             for i in range(len(groups)):
                 if i in used:
@@ -91,7 +111,9 @@ class Processor:
                 for j in range(i + 1, len(groups)):
                     if j in used:
                         continue
+                    # Two domain groups can be merged.
                     if in_one_group(group_means, i, j):
+                        # Merge two groups
                         new_group.extend(groups[j])
                         used.add(j)
                 new_groups.append(new_group)
@@ -101,20 +123,35 @@ class Processor:
         return groups
 
     def props_split(self, data_props):
+        """
+        Main workflow for DDP computation process in one modality.
+        :param data_props: Statistical results of all subjects in this modality across ROIs.
+        :return:
+        """
+
+        # Record the statistical results of all data in this modality.
         m_prop = {}
         for data_prop in data_props:
-            for label, props in data_prop.items():
-                if label not in m_prop:
-                    m_prop[label] = props
+            for ROI, props in data_prop.items():
+                if ROI not in m_prop:
+                    m_prop[ROI] = props
                 else:
+                    # Merge the median, quantiles, mean, and standard deviation for each ROI.
                     for k, v in props.items():
-                        m_prop[label][k] += v
+                        m_prop[ROI][k] += v
         prop_size = len(data_props)
-        for label, props in m_prop.items():
+        for ROI, props in m_prop.items():
+            # Take the average of each statistical metric.
             for k, v in props.items():
                 props[k] /= prop_size
-            props['label'] = label
+            # Record the ROI label.
+            props['label'] = ROI
+
+        # Divide individual modal domains
         groups = self.cluster_domain(m_prop, self.cut_thr)
+
+        # Organize the DDP results based on this modality’s partitioning outcome,
+        # i.e., merge the ROIs and statistical information within each domain.
         info_groups = []
         for group in groups:
             group_info = {}
@@ -125,12 +162,18 @@ class Processor:
                     else:
                         group_info[k].append(v)
             for k, v in group_info.items():
+                # Average the statistical results, while keeping the labels as the merged set of ROIs.
                 if k != 'label':
                     group_info[k] = np.mean(group_info[k])
             info_groups.append(group_info)
         return info_groups
 
     def domain_split(self, img_keys):
+        """
+        Data domain partition
+        :param img_keys: List[str]
+        :return: domains information
+        """
         self.logger('Domain spliting')
 
         domain_file = join(self.processed_dataset, 'domains.json')
@@ -140,12 +183,13 @@ class Processor:
         img_dir, lbl_dir = join(self.raw_dataset, self.images_dir), join(self.raw_dataset, self.labels_dir)
         domains = {}
         for modality in self.modalities.keys():
-            m = int(modality)
-            rs = []
+            m, rs = int(modality), []
+            # Asynchronous processing of each subject
             with mp.get_context('spawn').Pool(12) as _p:
                 for img_key in img_keys:
                     img_file = join(img_dir, f'{img_key}_{m:04d}.nii.gz')
                     roi_file = join(lbl_dir, f'{img_key}.nii.gz')
+                    # analysis subject statistic
                     rs.append(_p.starmap_async(self.analyze_one, ((img_file, roi_file),)))
                 waiting_proc(rs, _p, f'  split m-{modality}')
             m_props = [r.get()[0] for r in rs]
@@ -155,6 +199,16 @@ class Processor:
 
     @staticmethod
     def process_one(img_files, domains, roi_file, processed_image_dir='', processed_label_dir=''):
+        """
+        Preprocess single subject in all modalities
+        :param img_files: paired images across all modalities
+        :param domains: DDP result
+        :param roi_file: label ROIS file
+        :param processed_image_dir: save image folder
+        :param processed_label_dir: save label folder
+        :return: preprocessed images data
+        """
+
         msk_data = nb.load(roi_file).get_fdata()
         msk_data[msk_data > 0] = 1
         if exists(processed_label_dir):
@@ -186,6 +240,12 @@ class Processor:
         return np.array(result)
 
     def process_data(self, img_keys, domains):
+        """
+        Preprocess all data
+        :param img_keys: iamge keys
+        :param domains: DDP result
+        :return:
+        """
         self.logger('Data processing')
 
         maybe_mkdir(self.processed_image_dir, clean=True)
@@ -200,6 +260,7 @@ class Processor:
                 roi_file = join(lbl_dir, f'{img_key}.nii.gz')
                 pros_img_dir = self.processed_image_dir
                 pros_lbl_dir = self.processed_label_dir
+                # Asynchronously process single subject in all modalities
                 rs.append(_p.starmap_async(self.process_one, ((img_files, domains, roi_file, pros_img_dir, pros_lbl_dir),)))
             waiting_proc(rs, _p, f'  State')
 
