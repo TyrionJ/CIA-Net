@@ -307,7 +307,7 @@ class Processor:
 
         if not exists(split_file):
             splits = []
-            k_fold = KFold(n_splits=5, shuffle=True, random_state=20184)
+            k_fold = KFold(n_splits=5, shuffle=True, random_state=42)
             for i, (train_idx, test_idx) in enumerate(k_fold.split(img_keys)):
                 train_keys = np.array(img_keys)[train_idx]
                 test_keys = np.array(img_keys)[test_idx]
