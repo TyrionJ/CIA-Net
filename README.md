@@ -10,6 +10,9 @@ We provide the PyTorch implementation of our Pattern Recognition submission ["CI
 ### Install requirements
 pip install -r requirements.txt
 
+### Sample set
+The pre-trained model weights and sample data are available for download via [QuarkCloud](https://pan.quark.cn/s/4240d86c39db).
+
 ### Preprocess
 ```python
 python execution/preprocess.py -r [CIA_raw folder] -p [CIA_processed folder] -D [dataset_ID] 
