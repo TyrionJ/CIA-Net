@@ -1,14 +1,11 @@
-% CUDA==12.8
 acvl_utils==0.2
 batchgenerators==0.25
 einops==0.8.2
-matplotlib==3.8.0
 nibabel==5.4.2
-numpy==2.4.4
-scikit_learn==1.8.0
-scipy==1.17.1
-skimage==0.0
+numpy==2.5.1
+scikit_learn==1.9.0
+scipy==1.18.0
+scikit-image==0.22.0
 sympy==1.12
-timm==0.9.7
 torch==2.0.1
 tqdm==4.63.0
