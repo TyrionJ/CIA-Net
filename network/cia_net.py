@@ -135,6 +135,10 @@ if __name__ == '__main__':
     data = torch.randn(1, 13, 128, 128, 80).to(device)
 
     net = CIANet([5, 8], 116).to(device)
+    params = sum(p.numel() for p in net.parameters())
+    print(f'params: {params/1e6:.2f} M')
+
+    print()
     net.deep_supervision = True
     net = net.to(device)
     net_segs, baf_segs = net(data, epoch=30)

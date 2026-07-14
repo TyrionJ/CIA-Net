@@ -2,7 +2,6 @@ acvl_utils==0.2
 batchgenerators==0.25
 einops==0.8.2
 matplotlib==3.8.0
-monai==1.2.0
 nibabel==5.4.2
 numpy==2.4.4
 scikit_learn==1.8.0
