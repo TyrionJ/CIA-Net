@@ -1,3 +1,4 @@
+% CUDA==12.8
 acvl_utils==0.2
 batchgenerators==0.25
 einops==0.8.2
